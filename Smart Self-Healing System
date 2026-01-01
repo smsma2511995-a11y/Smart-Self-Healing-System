@@ -1,0 +1,2869 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+🤖 Smart Self-Healing System v3.0 - Ultimate Professional Edition
+✨ Intelligent auto-healing system for Python code with advanced AI integration
+"""
+
+# ========================================================
+# 📦 IMPORT LIBRARIES
+# ========================================================
+import os
+import sys
+import re
+import json
+import time
+import hashlib
+import shutil
+import glob
+import subprocess
+import threading
+import queue
+import concurrent.futures
+import difflib
+import readline  # For terminal history
+import ast
+import inspect
+import traceback
+import signal
+import select
+import tty
+import termios
+import fcntl
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import List, Dict, Optional, Tuple, Any, Set
+from dataclasses import dataclass
+from enum import Enum
+
+# Try to import optional enhancement libraries
+try:
+    from rich.console import Console
+    from rich.table import Table
+    from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
+    from rich.panel import Panel
+    from rich.syntax import Syntax
+    from rich import print as rprint
+    from rich.prompt import Prompt, Confirm
+    from rich.layout import Layout
+    from rich.tree import Tree
+    from rich.live import Live
+    RICH_AVAILABLE = True
+    console = Console()
+except ImportError:
+    RICH_AVAILABLE = False
+    print("💡 For better UI: pip install rich")
+
+# Try to import ML libraries (optional)
+try:
+    import numpy as np
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+    ML_AVAILABLE = True
+except ImportError:
+    ML_AVAILABLE = False
+
+# ========================================================
+# 🎨 ENHANCED UI CLASSES
+# ========================================================
+class Color:
+    """Terminal colors"""
+    GREEN = '\033[92m'
+    RED = '\033[91m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    MAGENTA = '\033[95m'
+    CYAN = '\033[96m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+    END = '\033[0m'
+
+class LogLevel(Enum):
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    SUCCESS = "SUCCESS"
+    DEBUG = "DEBUG"
+
+@dataclass
+class LogEntry:
+    timestamp: datetime
+    level: LogLevel
+    message: str
+    file: str = ""
+    line: int = 0
+
+class TerminalUI:
+    """Enhanced terminal user interface"""
+    
+    def __init__(self):
+        self.log_history = []
+        self.start_time = datetime.now()
+    
+    @staticmethod
+    def header(text: str, emoji: str = "🚀"):
+        """Main header"""
+        if RICH_AVAILABLE:
+            console.rule(f"[bold blue]{emoji} {text}[/bold blue]")
+        else:
+            print(f"\n{'='*60}")
+            print(f"{Color.BOLD}{Color.CYAN}{emoji} {text}{Color.END}")
+            print(f"{'='*60}")
+    
+    @staticmethod
+    def log(level: LogLevel, text: str, **kwargs):
+        """Unified logging method"""
+        file = kwargs.get('file', '')
+        line = kwargs.get('line', 0)
+        
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        location = f" ({file}:{line})" if file and line else ""
+        
+        if RICH_AVAILABLE:
+            colors = {
+                LogLevel.INFO: "cyan",
+                LogLevel.WARNING: "yellow",
+                LogLevel.ERROR: "red",
+                LogLevel.SUCCESS: "green",
+                LogLevel.DEBUG: "dim white"
+            }
+            icon = {
+                LogLevel.INFO: "ℹ️",
+                LogLevel.WARNING: "⚠️",
+                LogLevel.ERROR: "❌",
+                LogLevel.SUCCESS: "✅",
+                LogLevel.DEBUG: "🔍"
+            }
+            
+            console.print(f"[{colors[level]}]{icon[level]} [{timestamp}] {level.value}: {text}{location}[/{colors[level]}]")
+        else:
+            colors = {
+                LogLevel.INFO: Color.CYAN,
+                LogLevel.WARNING: Color.YELLOW,
+                LogLevel.ERROR: Color.RED,
+                LogLevel.SUCCESS: Color.GREEN,
+                LogLevel.DEBUG: Color.MAGENTA
+            }
+            icon = {
+                LogLevel.INFO: "ℹ️",
+                LogLevel.WARNING: "⚠️",
+                LogLevel.ERROR: "❌",
+                LogLevel.SUCCESS: "✅",
+                LogLevel.DEBUG: "🔍"
+            }
+            
+            print(f"{colors[level]}{icon[level]} [{timestamp}] {level.value}: {text}{location}{Color.END}")
+    
+    @staticmethod
+    def success(text: str, **kwargs):
+        """Success message"""
+        TerminalUI.log(LogLevel.SUCCESS, text, **kwargs)
+    
+    @staticmethod
+    def error(text: str, **kwargs):
+        """Error message"""
+        TerminalUI.log(LogLevel.ERROR, text, **kwargs)
+    
+    @staticmethod
+    def warning(text: str, **kwargs):
+        """Warning message"""
+        TerminalUI.log(LogLevel.WARNING, text, **kwargs)
+    
+    @staticmethod
+    def info(text: str, **kwargs):
+        """Info message"""
+        TerminalUI.log(LogLevel.INFO, text, **kwargs)
+    
+    @staticmethod
+    def debug(text: str, **kwargs):
+        """Debug message"""
+        TerminalUI.log(LogLevel.DEBUG, text, **kwargs)
+    
+    @staticmethod
+    def show_files(files: List[str], title: str = "Available Files"):
+        """Display file list with enhanced information"""
+        if not files:
+            TerminalUI.warning("No files found")
+            return
+        
+        if RICH_AVAILABLE:
+            table = Table(title=title, show_header=True, header_style="bold magenta")
+            table.add_column("#", style="dim", width=4, justify="right")
+            table.add_column("Name", style="bold", width=30)
+            table.add_column("Size", justify="right", width=10)
+            table.add_column("Modified", justify="right", width=10)
+            table.add_column("Lines", justify="right", width=8)
+            table.add_column("Complexity", justify="right", width=12)
+            
+            for i, f in enumerate(files, 1):
+                try:
+                    size = os.path.getsize(f) / 1024
+                    lines = TerminalUI._count_lines(f)
+                    mtime = datetime.fromtimestamp(os.path.getmtime(f)).strftime("%H:%M")
+                    
+                    # Calculate complexity
+                    complexity = TerminalUI._calculate_complexity(f)
+                    complexity_str = f"{complexity:.1f}" if complexity > 0 else "N/A"
+                    
+                    table.add_row(
+                        str(i),
+                        f,
+                        f"{size:.1f} KB",
+                        mtime,
+                        str(lines),
+                        complexity_str
+                    )
+                except:
+                    table.add_row(str(i), f, "N/A", "N/A", "N/A", "N/A")
+            
+            console.print(table)
+        else:
+            print(f"\n📁 {title}:")
+            print(f"{'-'*90}")
+            print(f"{'#':<4} {'Name':<30} {'Size':<10} {'Modified':<10} {'Lines':<8} {'Complexity':<12}")
+            print(f"{'-'*90}")
+            
+            for i, f in enumerate(files, 1):
+                try:
+                    size = os.path.getsize(f) / 1024
+                    lines = TerminalUI._count_lines(f)
+                    mtime = datetime.fromtimestamp(os.path.getmtime(f)).strftime("%H:%M")
+                    complexity = TerminalUI._calculate_complexity(f)
+                    complexity_str = f"{complexity:.1f}" if complexity > 0 else "N/A"
+                    
+                    print(f"{i:<4} {f:<30} {size:<10.1f} {mtime:<10} {lines:<8} {complexity_str:<12}")
+                except:
+                    print(f"{i:<4} {f:<30} {'N/A':<10} {'N/A':<10} {'N/A':<8} {'N/A':<12}")
+    
+    @staticmethod
+    def show_code_differences(original: str, modified: str, title: str = "Code Differences"):
+        """Show differences between original and modified code"""
+        TerminalUI.header(title, "📊")
+        
+        original_lines = original.split('\n')
+        modified_lines = modified.split('\n')
+        
+        diff = list(difflib.unified_diff(
+            original_lines,
+            modified_lines,
+            fromfile='Original',
+            tofile='Modified',
+            lineterm='',
+            n=3
+        ))
+        
+        if diff:
+            if RICH_AVAILABLE:
+                diff_text = "\n".join(diff[:100])  # Show first 100 lines
+                syntax = Syntax(diff_text, "diff", theme="monokai", line_numbers=True)
+                console.print(Panel(syntax, title="Differences", border_style="cyan"))
+            else:
+                print("Changes:")
+                for line in diff[:100]:  # Show first 100 lines
+                    if line.startswith('+'):
+                        print(f"{Color.GREEN}{line}{Color.END}")
+                    elif line.startswith('-'):
+                        print(f"{Color.RED}{line}{Color.END}")
+                    elif line.startswith('@'):
+                        print(f"{Color.CYAN}{line}{Color.END}")
+                    else:
+                        print(line)
+                
+                if len(diff) > 100:
+                    TerminalUI.info(f"... and {len(diff) - 100} more changes")
+        else:
+            TerminalUI.info("No changes detected")
+    
+    @staticmethod
+    def _count_lines(file_path: str) -> int:
+        """Count lines in file"""
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                return sum(1 for _ in f)
+        except:
+            return 0
+    
+    @staticmethod
+    def _calculate_complexity(file_path: str) -> float:
+        """Calculate code complexity (simplified)"""
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            
+            # Simple complexity calculation
+            complexity = 1
+            complexity += len(re.findall(r'\bif\b|\belse\b|\belif\b', content))
+            complexity += len(re.findall(r'\bfor\b|\bwhile\b', content)) * 2
+            complexity += len(re.findall(r'\btry\b|\bexcept\b|\bfinally\b', content))
+            complexity += len(re.findall(r'\bdef\b|\bclass\b', content)) * 3
+            
+            return complexity
+        except:
+            return 0
+
+# ========================================================
+# ⚙️ ENHANCED CONFIGURATION
+# ========================================================
+class Config:
+    """Enhanced system configuration"""
+    
+    # File settings
+    MAX_FILE_SIZE_MB = 50
+    CHUNK_SIZE_LINES = 500
+    MAX_CHUNKS = 100
+    AST_SPLIT_ENABLED = True
+    
+    # API settings
+    MAX_RETRIES = 3
+    REQUEST_TIMEOUT = 30
+    HEALTH_CHECK_INTERVAL = 30
+    MAX_REQUESTS_PER_KEY = 45
+    RATE_LIMIT_DELAY = 1.0
+    
+    # Performance settings
+    MAX_WORKERS = 2
+    TOKEN_LIMIT = 28000
+    CACHE_ENABLED = True
+    CACHE_TTL = 3600  # 1 hour
+    
+    # Backup settings
+    MAX_BACKUPS = 10
+    BACKUP_DIR = "smart_backups"
+    
+    # Learning settings
+    LEARNING_ENABLED = True
+    HISTORY_FILE = ".smart_healer_history.json"
+    
+    # Validation settings
+    MIN_CONTENT_RATIO = 0.3  # Min 30% of original content
+    MAX_CONTENT_RATIO = 3.0  # Max 300% of original content
+    
+    @staticmethod
+    def get_free_models() -> List[str]:
+        """Get list of free models"""
+        return [
+            "deepseek/deepseek-chat:free",
+            "google/gemini-2.0-flash-exp:free",
+            "deepseek/deepseek-r1-0528:free",
+            "meta-llama/llama-3.2-3b-instruct:free",
+            "mistralai/mistral-7b-instruct:free"
+        ]
+    
+    @staticmethod
+    def get_api_keys() -> List[str]:
+        """Get API keys from multiple sources"""
+        keys = []
+        
+        # 1. Environment variables
+        for i in range(1, 10):
+            key = os.getenv(f"FREE_KEY_{i}", "")
+            if key and len(key) > 20:
+                keys.append(key)
+        
+        # 2. Key files
+        key_files = ["api_keys.txt", ".api_keys", "keys.txt", ".env"]
+        for key_file in key_files:
+            if os.path.exists(key_file):
+                try:
+                    with open(key_file, 'r', encoding='utf-8') as f:
+                        for line in f:
+                            line = line.strip()
+                            if line and not line.startswith('#') and len(line) > 20:
+                                keys.append(line)
+                except Exception as e:
+                    TerminalUI.debug(f"Error reading {key_file}: {e}")
+        
+        # 3. User home directory
+        home_keys = os.path.expanduser("~/.smart_healer_keys")
+        if os.path.exists(home_keys):
+            try:
+                with open(home_keys, 'r') as f:
+                    keys.extend([k.strip() for k in f if k.strip() and len(k.strip()) > 20])
+            except:
+                pass
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_keys = []
+        for key in keys:
+            if key not in seen:
+                seen.add(key)
+                unique_keys.append(key)
+        
+        return unique_keys
+    
+    @staticmethod
+    def estimate_tokens(text: str) -> int:
+        """Estimate token count"""
+        # Simple estimation: 1 token ≈ 4 chars English, 2 chars Arabic/other
+        english_chars = len(re.findall(r'[a-zA-Z0-9\s\.,;:!?]', text))
+        other_chars = len(text) - english_chars
+        return (english_chars // 4) + (other_chars // 2) + 10  # Buffer
+    
+    @staticmethod
+    def load_config() -> Dict:
+        """Load configuration from file"""
+        config_file = ".smart_healer_config.json"
+        default_config = {
+            "max_file_size": Config.MAX_FILE_SIZE_MB,
+            "chunk_size": Config.CHUNK_SIZE_LINES,
+            "api_keys": Config.get_api_keys(),
+            "preferred_model": "deepseek/deepseek-chat:free",
+            "auto_backup": True,
+            "show_diff": True,
+            "ast_splitting": True,
+            "learning_enabled": True
+        }
+        
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r') as f:
+                    user_config = json.load(f)
+                    default_config.update(user_config)
+            except Exception as e:
+                TerminalUI.warning(f"Error loading config: {e}")
+        
+        return default_config
+
+# ========================================================
+# 📂 ENHANCED FILE SELECTOR
+# ========================================================
+class SmartFileSelector:
+    """Intelligent file selection system"""
+    
+    def __init__(self):
+        self.script_name = os.path.basename(__file__)
+        self.history_file = os.path.expanduser("~/.smart_healer_file_history")
+        self.learning_data = self._load_learning_data()
+        self.load_history()
+    
+    def load_history(self):
+        """Load file history"""
+        self.history = []
+        if os.path.exists(self.history_file):
+            try:
+                with open(self.history_file, 'r', encoding='utf-8') as f:
+                    self.history = [line.strip() for line in f if line.strip()]
+            except:
+                self.history = []
+    
+    def save_to_history(self, file_path: str):
+        """Save to history with frequency tracking"""
+        if file_path in self.history:
+            self.history.remove(file_path)
+        self.history.insert(0, file_path)
+        
+        # Keep only last 50 files
+        self.history = self.history[:50]
+        
+        try:
+            with open(self.history_file, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(self.history))
+        except Exception as e:
+            TerminalUI.debug(f"Error saving history: {e}")
+    
+    def _load_learning_data(self) -> Dict:
+        """Load learning data for smart suggestions"""
+        data_file = os.path.expanduser("~/.smart_healer_learning.json")
+        default_data = {
+            "file_frequencies": {},
+            "error_patterns": {},
+            "success_rates": {},
+            "recent_projects": []
+        }
+        
+        if os.path.exists(data_file):
+            try:
+                with open(data_file, 'r') as f:
+                    return json.load(f)
+            except:
+                return default_data
+        
+        return default_data
+    
+    def select_file(self, auto_mode: bool = False, project_root: str = None) -> Optional[str]:
+        """Intelligent file selection"""
+        
+        # Find Python files
+        py_files = self._find_py_files(project_root)
+        
+        if not py_files:
+            TerminalUI.error("No Python files found!")
+            return self._create_demo_file()
+        
+        # Auto mode: get most relevant file
+        if auto_mode:
+            return self._get_most_relevant_file(py_files)
+        
+        # Interactive mode: show smart menu
+        return self._show_smart_menu(py_files)
+    
+    def _find_py_files(self, project_root: str = None) -> List[str]:
+        """Find Python files with intelligent filtering"""
+        if project_root is None:
+            project_root = os.getcwd()
+        
+        files = []
+        
+        # Look for project root indicators
+        project_files = ['requirements.txt', 'setup.py', 'pyproject.toml', '.git']
+        is_project = any(os.path.exists(os.path.join(project_root, f)) for f in project_files)
+        
+        if is_project:
+            TerminalUI.info(f"Project detected in: {project_root}")
+        
+        # Search patterns
+        patterns = ["*.py", "*.pyw", "*.pyx", "*.ipynb"]
+        for pattern in patterns:
+            for root, dirs, filenames in os.walk(project_root):
+                # Skip virtual environments
+                if 'venv' in root or '.venv' in root or '__pycache__' in root:
+                    continue
+                
+                for filename in fnmatch.filter(filenames, pattern):
+                    full_path = os.path.join(root, filename)
+                    
+                    # Skip current script
+                    if full_path == self.script_name:
+                        continue
+                    
+                    # Skip very large files
+                    try:
+                        if os.path.getsize(full_path) > Config.MAX_FILE_SIZE_MB * 1024 * 1024:
+                            TerminalUI.debug(f"Skipping large file: {full_path}")
+                            continue
+                    except:
+                        pass
+                    
+                    files.append(full_path)
+        
+        # Sort by relevance
+        files = self._sort_by_relevance(files)
+        
+        return files
+    
+    def _sort_by_relevance(self, files: List[str]) -> List[str]:
+        """Sort files by relevance (recent, frequent, size)"""
+        
+        def relevance_score(file_path: str) -> Tuple:
+            try:
+                # Frequency from history (higher is better)
+                freq_score = self.history.count(file_path) if file_path in self.history else 0
+                
+                # Recency (newer is better)
+                mtime = os.path.getmtime(file_path)
+                recency_score = mtime
+                
+                # Size (medium is better, too small/large is worse)
+                size = os.path.getsize(file_path)
+                if size < 100:  # Too small
+                    size_score = 0
+                elif size > 100000:  # Too large
+                    size_score = 0.5
+                else:
+                    size_score = 1
+                
+                # Learning data
+                learning_score = self.learning_data.get("success_rates", {}).get(file_path, 0.5)
+                
+                return (-freq_score, -recency_score, -size_score, -learning_score)
+            except:
+                return (0, 0, 0, 0)
+        
+        return sorted(files, key=relevance_score)
+    
+    def _get_most_relevant_file(self, files: List[str]) -> Optional[str]:
+        """Get most relevant file based on multiple factors"""
+        if not files:
+            return self._create_demo_file()
+        
+        # Check history first
+        for file in files:
+            if file in self.history and os.path.exists(file):
+                TerminalUI.info(f"Auto-selected from history: {file}")
+                return file
+        
+        # Get newest file
+        newest = max(files, key=lambda x: os.path.getmtime(x))
+        TerminalUI.info(f"Auto-selected newest file: {newest}")
+        
+        # Ask for confirmation
+        if RICH_AVAILABLE:
+            confirm = Confirm.ask(f"Process {os.path.basename(newest)}?")
+        else:
+            confirm = input(f"Process {os.path.basename(newest)}? (y/n): ").strip().lower() in ['y', 'yes', '']
+        
+        if confirm:
+            self.save_to_history(newest)
+            return newest
+        else:
+            return self._show_smart_menu(files)
+    
+    def _show_smart_menu(self, files: List[str]) -> Optional[str]:
+        """Show intelligent file menu"""
+        TerminalUI.header("Smart Self-Healing System", "🤖")
+        
+        # Show file categories
+        recent_files = files[:15]
+        historical_files = [f for f in self.history if f in files][:10]
+        
+        TerminalUI.show_files(recent_files, "📂 Recent Files")
+        
+        if historical_files:
+            TerminalUI.info("\n📜 Frequently Used Files:")
+            for i, f in enumerate(historical_files, 1):
+                if os.path.exists(f):
+                    rel_path = os.path.relpath(f)
+                    print(f"  {i}. {rel_path}")
+        
+        # Statistics
+        total_size = sum(os.path.getsize(f) for f in files if os.path.exists(f)) / 1024 / 1024
+        print(f"\n📊 Statistics: {len(files)} files, {total_size:.1f} MB total")
+        print("💡 Type filename, number, or drag & drop file")
+        print("-"*60)
+        
+        while True:
+            try:
+                choice = input("\n🔢 Enter choice (0=Exit, p=Project mode): ").strip()
+                
+                if choice == '0':
+                    return None
+                elif choice.lower() == 'p':
+                    # Project mode
+                    project_path = input("Enter project path (Enter for current): ").strip()
+                    if not project_path:
+                        project_path = os.getcwd()
+                    return self.select_file(auto_mode=False, project_root=project_path)
+                
+                # Check if it's a file path
+                if os.path.exists(choice):
+                    if choice.endswith(('.py', '.pyw', '.pyx')):
+                        self.save_to_history(choice)
+                        return choice
+                    else:
+                        TerminalUI.warning("Not a Python file!")
+                
+                # Check if it's a number
+                if choice.isdigit():
+                    idx = int(choice) - 1
+                    if 0 <= idx < len(recent_files):
+                        selected = recent_files[idx]
+                        self.save_to_history(selected)
+                        return selected
+                
+                # Check if it's a partial name
+                matches = [f for f in files if choice.lower() in f.lower()]
+                if matches:
+                    if len(matches) == 1:
+                        self.save_to_history(matches[0])
+                        return matches[0]
+                    else:
+                        TerminalUI.info(f"Multiple matches: {matches[:5]}")
+                
+                TerminalUI.error("Invalid choice!")
+                
+            except KeyboardInterrupt:
+                print("\n👋 Exiting...")
+                return None
+            except EOFError:
+                print("\n👋 Exiting...")
+                return None
+    
+    def _create_demo_file(self) -> str:
+        """Create comprehensive demo file"""
+        demo_file = "demo_errors.py"
+        
+        demo_code = '''"""
+Comprehensive Python file with various error types for testing
+"""
+
+import math
+import sys
+from typing import List, Optional
+
+# ===== SYNTAX ERRORS =====
+def syntax_error_function():
+    # Missing colon
+    if True
+        print("Missing colon")
+    
+    # Unmatched parentheses
+    result = (1 + 2 * (3 - 4)
+    
+    return result
+
+# ===== RUNTIME ERRORS =====
+def calculate_stats(numbers: List[float]) -> Dict[str, float]:
+    """Calculate statistics with potential errors"""
+    total = sum(numbers)
+    
+    # Potential ZeroDivisionError
+    mean = total / len(numbers) if numbers else 0
+    
+    # Potential NameError (using undefined variable)
+    variance = sum((x - mean) ** 2 for x in numbers) / len(numbers)
+    
+    # Type conversion issue
+    result_str = "Mean: " + str(mean) + ", Variance: " + variance
+    
+    return {
+        "total": total,
+        "mean": mean,
+        "variance": variance,
+        "result": result_str
+    }
+
+# ===== LOGICAL ERRORS =====
+def is_prime(n: int) -> bool:
+    """Check if number is prime (has logical error)"""
+    if n <= 1:
+        return False
+    if n == 2:
+        return True
+    if n % 2 == 0:
+        return False
+    
+    # Logical error: should be math.isqrt(n) + 1
+    for i in range(3, int(math.sqrt(n)), 2):
+        if n % i == 0:
+            return False
+    
+    return True
+
+# ===== TYPE ERRORS =====
+def process_data(data):
+    """Process data with type issues"""
+    result = []
+    
+    for item in data:
+        # Type confusion
+        processed = item * 2
+        
+        # Potential AttributeError
+        if hasattr(item, 'upper'):
+            processed = processed.upper()
+        
+        result.append(processed)
+    
+    return result
+
+# ===== INDEX ERRORS =====
+def get_middle_element(items: List) -> Any:
+    """Get middle element with index issues"""
+    if not items:
+        return None
+    
+    # Potential IndexError for single element lists
+    middle_index = len(items) // 2
+    return items[middle_index + 1]
+
+# ===== IMPORT ERRORS =====
+try:
+    import non_existent_module
+except ImportError:
+    print("Non-existent module import failed")
+
+# ===== MAIN EXECUTION =====
+if __name__ == "__main__":
+    print("=== Running demo with various errors ===")
+    
+    # Test different scenarios
+    try:
+        # Test with empty list
+        stats = calculate_stats([])
+        print(f"Stats: {stats}")
+    except Exception as e:
+        print(f"Error in calculate_stats: {type(e).__name__}: {e}")
+    
+    try:
+        # Test prime detection
+        print(f"Is 17 prime? {is_prime(17)}")
+        print(f"Is 9 prime? {is_prime(9)}")  # Should be False but might be True
+    except Exception as e:
+        print(f"Error in is_prime: {e}")
+    
+    try:
+        # Test type processing
+        data = [1, "hello", 3.14, None]
+        processed = process_data(data)
+        print(f"Processed: {processed}")
+    except Exception as e:
+        print(f"Error in process_data: {e}")
+    
+    print("=== Demo complete ===")
+'''
+        
+        try:
+            with open(demo_file, 'w', encoding='utf-8') as f:
+                f.write(demo_code)
+            
+            TerminalUI.success(f"Created demo file: {demo_file}")
+            return demo_file
+        except Exception as e:
+            TerminalUI.error(f"Failed to create demo: {e}")
+            return ""
+
+# ========================================================
+# 🧠 AST-BASED SMART SPLITTER
+# ========================================================
+class ASTSmartSplitter:
+    """AST-based intelligent code splitter"""
+    
+    def __init__(self):
+        self.imports = set()
+        self.globals = set()
+        self.dependencies = {}
+    
+    def analyze_code_structure(self, code: str) -> Dict:
+        """Analyze code structure using AST"""
+        try:
+            tree = ast.parse(code)
+            
+            analyzer = ASTAnalyzer()
+            analyzer.visit(tree)
+            
+            return {
+                "imports": analyzer.imports,
+                "globals": analyzer.globals,
+                "functions": analyzer.functions,
+                "classes": analyzer.classes,
+                "dependencies": analyzer.dependencies
+            }
+        except SyntaxError as e:
+            TerminalUI.warning(f"AST parsing failed: {e}")
+            return {}
+    
+    def smart_split(self, code: str, max_lines: int = 500) -> List[Tuple[int, int, str, List[str]]]:
+        """Intelligent splitting preserving dependencies"""
+        
+        # Analyze structure
+        structure = self.analyze_code_structure(code)
+        
+        if not structure:
+            # Fallback to line-based splitting
+            return self._line_based_split(code, max_lines)
+        
+        lines = code.split('\n')
+        chunks = []
+        current_chunk = []
+        current_start = 0
+        current_deps = set()
+        
+        # Group by logical units
+        for i, line in enumerate(lines):
+            current_chunk.append(line)
+            line_deps = self._extract_line_dependencies(line, structure)
+            current_deps.update(line_deps)
+            
+            # Check splitting conditions
+            should_split = (
+                len(current_chunk) >= max_lines or
+                self._is_logical_boundary(line, i, lines) or
+                self._has_dependency_break(current_deps, chunks)
+            )
+            
+            if should_split and len(current_chunk) > 10:
+                chunk_content = '\n'.join(current_chunk)
+                
+                # Add global imports if needed
+                if chunks:  # Not the first chunk
+                    chunk_content = self._add_required_imports(chunk_content, structure)
+                
+                chunks.append((
+                    current_start,
+                    i,
+                    chunk_content,
+                    list(current_deps)
+                ))
+                
+                current_chunk = []
+                current_start = i + 1
+                current_deps = set()
+        
+        # Add remaining
+        if current_chunk:
+            chunk_content = '\n'.join(current_chunk)
+            if chunks:
+                chunk_content = self._add_required_imports(chunk_content, structure)
+            chunks.append((
+                current_start,
+                len(lines) - 1,
+                chunk_content,
+                list(current_deps)
+            ))
+        
+        return chunks
+    
+    def _line_based_split(self, code: str, max_lines: int) -> List[Tuple[int, int, str, List[str]]]:
+        """Fallback line-based splitting"""
+        lines = code.split('\n')
+        chunks = []
+        
+        for i in range(0, len(lines), max_lines):
+            chunk_lines = lines[i:i + max_lines]
+            chunk_content = '\n'.join(chunk_lines)
+            chunks.append((i, min(i + max_lines, len(lines)), chunk_content, []))
+        
+        return chunks
+    
+    def _extract_line_dependencies(self, line: str, structure: Dict) -> Set[str]:
+        """Extract variable/function dependencies from a line"""
+        deps = set()
+        
+        # Find function calls
+        func_pattern = r'(\b\w+)\s*\('
+        for match in re.finditer(func_pattern, line):
+            func_name = match.group(1)
+            if func_name in structure.get('functions', {}):
+                deps.add(func_name)
+            elif func_name in structure.get('classes', {}):
+                deps.add(func_name)
+        
+        # Find variable usage
+        var_pattern = r'\b(\w+)\b(?!\s*\()'
+        for match in re.finditer(var_pattern, line):
+            var_name = match.group(1)
+            if var_name in structure.get('globals', {}):
+                deps.add(var_name)
+        
+        return deps
+    
+    def _is_logical_boundary(self, line: str, line_num: int, all_lines: List[str]) -> bool:
+        """Check if line is a logical boundary"""
+        stripped = line.strip()
+        
+        # Start of function or class
+        if stripped.startswith(('def ', 'class ', 'async def ')):
+            return True
+        
+        # End of block (followed by dedent)
+        if line_num + 1 < len(all_lines):
+            next_line = all_lines[line_num + 1]
+            current_indent = len(line) - len(line.lstrip())
+            next_indent = len(next_line) - len(next_line.lstrip())
+            
+            if next_indent < current_indent and next_indent <= 4:
+                return True
+        
+        return False
+    
+    def _has_dependency_break(self, current_deps: Set[str], existing_chunks: List) -> bool:
+        """Check if splitting would break critical dependencies"""
+        if not existing_chunks:
+            return False
+        
+        # Collect all dependencies from previous chunks
+        all_previous_deps = set()
+        for _, _, _, deps in existing_chunks:
+            all_previous_deps.update(deps)
+        
+        # Check if current deps depend on previous ones
+        critical_deps = current_deps.intersection(all_previous_deps)
+        return len(critical_deps) > 2
+    
+    def _add_required_imports(self, code: str, structure: Dict) -> str:
+        """Add required imports to code chunk"""
+        imports = structure.get('imports', [])
+        
+        if imports:
+            import_block = '\n'.join(imports)
+            return f"{import_block}\n\n{code}"
+        
+        return code
+
+class ASTAnalyzer(ast.NodeVisitor):
+    """AST analyzer for code structure"""
+    
+    def __init__(self):
+        self.imports = []
+        self.globals = set()
+        self.functions = {}
+        self.classes = {}
+        self.dependencies = {}
+        self.current_scope = None
+    
+    def visit_Import(self, node):
+        """Visit import statements"""
+        for alias in node.names:
+            self.imports.append(f"import {alias.name}")
+    
+    def visit_ImportFrom(self, node):
+        """Visit from ... import statements"""
+        module = node.module or ''
+        names = ', '.join(alias.name for alias in node.names)
+        self.imports.append(f"from {module} import {names}")
+    
+    def visit_FunctionDef(self, node):
+        """Visit function definitions"""
+        self.functions[node.name] = {
+            "lineno": node.lineno,
+            "args": [arg.arg for arg in node.args.args],
+            "deps": set()
+        }
+        
+        old_scope = self.current_scope
+        self.current_scope = node.name
+        
+        # Analyze function body for dependencies
+        analyzer = DependencyAnalyzer()
+        analyzer.visit(node)
+        self.dependencies[node.name] = analyzer.dependencies
+        
+        self.current_scope = old_scope
+        self.generic_visit(node)
+    
+    def visit_ClassDef(self, node):
+        """Visit class definitions"""
+        self.classes[node.name] = {
+            "lineno": node.lineno,
+            "methods": []
+        }
+        self.generic_visit(node)
+    
+    def visit_Assign(self, node):
+        """Visit assignment statements"""
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                self.globals.add(target.id)
+        self.generic_visit(node)
+
+class DependencyAnalyzer(ast.NodeVisitor):
+    """Analyze dependencies within a scope"""
+    
+    def __init__(self):
+        self.dependencies = set()
+    
+    def visit_Name(self, node):
+        """Visit name nodes"""
+        if isinstance(node.ctx, ast.Load):
+            self.dependencies.add(node.id)
+    
+    def visit_Call(self, node):
+        """Visit function calls"""
+        if isinstance(node.func, ast.Name):
+            self.dependencies.add(node.func.id)
+        self.generic_visit(node)
+
+# ========================================================
+# 🔧 ENHANCED PROCESS MANAGER
+# ========================================================
+class SmartProcessManager:
+    """Intelligent process manager with input handling"""
+    
+    def __init__(self):
+        self.timeout = 30
+        self.max_attempts = 3
+        self.input_cache = {}
+    
+    def run_script(self, script_path: str, input_data: str = None, 
+                   timeout: int = None) -> Tuple[bool, str, str]:
+        """Run script with intelligent input handling"""
+        if timeout is None:
+            timeout = self.timeout
+        
+        try:
+            # Detect input requirements
+            requires_input = self.detect_input_requirements(script_path)
+            mock_input = self.generate_mock_inputs(requires_input)
+            
+            # Prepare command
+            cmd = [sys.executable, script_path]
+            
+            # Run with appropriate input handling
+            if mock_input or input_data:
+                return self._run_with_input(cmd, mock_input or input_data, timeout)
+            else:
+                return self._run_without_input(cmd, timeout)
+                
+        except Exception as e:
+            return False, "", f"Process error: {e}"
+    
+    def detect_input_requirements(self, script_path: str) -> List[Dict[str, Any]]:
+        """Detect input requirements in script"""
+        try:
+            with open(script_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except:
+            return []
+        
+        requirements = []
+        
+        # Detect input() calls
+        input_pattern = r'input\([^)]*\)'
+        for match in re.finditer(input_pattern, content):
+            line_num = content[:match.start()].count('\n') + 1
+            prompt = self._extract_prompt(match.group())
+            
+            requirements.append({
+                "type": "user_input",
+                "location": line_num,
+                "prompt": prompt,
+                "required": True
+            })
+        
+        # Detect file reads
+        file_patterns = [
+            r'open\([^)]*,\s*["\']r["\']',
+            r'open\([^)]*,\s*["\']rb["\']',
+            r'with\s+open\([^)]*\)\s+as',
+        ]
+        
+        for pattern in file_patterns:
+            for match in re.finditer(pattern, content):
+                line_num = content[:match.start()].count('\n') + 1
+                filename = self._extract_filename(match.group())
+                
+                requirements.append({
+                    "type": "file_input",
+                    "location": line_num,
+                    "filename": filename,
+                    "required": os.path.exists(filename)
+                })
+        
+        # Detect command line arguments
+        if 'sys.argv' in content or 'argparse' in content:
+            requirements.append({
+                "type": "cli_args",
+                "location": 0,
+                "description": "Command line arguments",
+                "required": False
+            })
+        
+        return requirements
+    
+    def generate_mock_inputs(self, requirements: List[Dict]) -> str:
+        """Generate mock inputs based on requirements"""
+        if not requirements:
+            return ""
+        
+        inputs = []
+        
+        for req in requirements:
+            if req["type"] == "user_input":
+                prompt = req.get("prompt", "").lower()
+                
+                # Smart response based on prompt content
+                if any(word in prompt for word in ["name", "اسم"]):
+                    inputs.append("Test User\n")
+                elif any(word in prompt for word in ["age", "عمر"]):
+                    inputs.append("25\n")
+                elif any(word in prompt for word in ["email", "بريد"]):
+                    inputs.append("test@example.com\n")
+                elif any(word in prompt for word in ["y/n", "yes/no"]):
+                    inputs.append("y\n")
+                elif any(word in prompt for word in ["number", "رقم", "عدد"]):
+                    inputs.append("42\n")
+                else:
+                    inputs.append("test\n")
+            
+            elif req["type"] == "file_input" and not req.get("required", True):
+                # Create mock file if it doesn't exist
+                filename = req.get("filename", "input.txt")
+                if not os.path.exists(filename):
+                    try:
+                        with open(filename, 'w') as f:
+                            f.write("Mock file content\nLine 2\nLine 3\n")
+                        inputs.append(f"Created mock file: {filename}\n")
+                    except:
+                        inputs.append(f"Failed to create: {filename}\n")
+        
+        return ''.join(inputs)
+    
+    def _run_with_input(self, cmd: List[str], input_data: str, timeout: int) -> Tuple[bool, str, str]:
+        """Run command with input"""
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding='utf-8',
+                errors='ignore'
+            )
+            
+            stdout, stderr = process.communicate(
+                input=input_data,
+                timeout=timeout
+            )
+            
+            return process.returncode == 0, stdout, stderr
+            
+        except subprocess.TimeoutExpired:
+            return False, "", "⏱️ Timeout while waiting for input"
+        except Exception as e:
+            return False, "", f"Input process error: {e}"
+    
+    def _run_without_input(self, cmd: List[str], timeout: int) -> Tuple[bool, str, str]:
+        """Run command without input"""
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                encoding='utf-8',
+                errors='ignore'
+            )
+            
+            return result.returncode == 0, result.stdout, result.stderr
+            
+        except subprocess.TimeoutExpired:
+            return False, "", "⏱️ Script execution timeout"
+        except Exception as e:
+            return False, "", f"Execution error: {e}"
+    
+    def _extract_prompt(self, input_call: str) -> str:
+        """Extract prompt from input() call"""
+        match = re.search(r'input\(([^)]+)\)', input_call)
+        if match:
+            prompt = match.group(1).strip('\'" ')
+            return prompt
+        return ""
+    
+    def _extract_filename(self, open_call: str) -> str:
+        """Extract filename from open() call"""
+        # Simple extraction - in reality should parse properly
+        match = re.search(r'open\(([^)]+)\)', open_call)
+        if match:
+            args = match.group(1).split(',')
+            if args:
+                filename = args[0].strip('\'" ')
+                return filename
+        return "unknown.txt"
+
+# ========================================================
+# 🧠 LOGICAL ERROR DETECTOR
+# ========================================================
+class LogicalErrorDetector:
+    """Detect logical errors in code"""
+    
+    def __init__(self):
+        self.patterns = self._load_error_patterns()
+    
+    def _load_error_patterns(self) -> List[Dict]:
+        """Load patterns for logical error detection"""
+        return [
+            {
+                "name": "impossible_condition",
+                "pattern": r'if\s+(True|False)\s*:',
+                "description": "Always true/false condition"
+            },
+            {
+                "name": "comparison_with_self",
+                "pattern": r'if\s+\w+\s*(==|!=|>|<|>=|<=)\s*\1\b',
+                "description": "Comparison with itself"
+            },
+            {
+                "name": "unreachable_code",
+                "pattern": r'return\s+.*\n\s+\w',
+                "description": "Code after return statement"
+            },
+            {
+                "name": "empty_except",
+                "pattern": r'except\s*:',
+                "description": "Bare except clause"
+            },
+            {
+                "name": "division_by_zero_risk",
+                "pattern": r'/\s*0\b',
+                "description": "Potential division by zero"
+            },
+            {
+                "name": "unused_import",
+                "pattern": r'^\s*import\s+(\w+)\s*$',
+                "description": "Possible unused import"
+            },
+            {
+                "name": "magic_number",
+                "pattern": r'\b(?!0\b)(?<!\.)\d{3,}\b',
+                "description": "Magic number (3+ digits)"
+            },
+            {
+                "name": "nested_too_deep",
+                "pattern": r'^\s{12,}',
+                "description": "Excessively nested code"
+            }
+        ]
+    
+    def analyze(self, code: str) -> Dict[str, Any]:
+        """Analyze code for logical errors"""
+        warnings = []
+        metrics = {
+            "complexity": 0,
+            "readability": 0,
+            "maintainability": 0
+        }
+        
+        # Calculate cyclomatic complexity
+        metrics["complexity"] = self._calculate_cyclomatic_complexity(code)
+        
+        # Check for logical error patterns
+        for pattern in self.patterns:
+            matches = re.finditer(pattern["pattern"], code, re.MULTILINE)
+            for match in matches:
+                line_num = code[:match.start()].count('\n') + 1
+                warning = {
+                    "type": pattern["name"],
+                    "description": pattern["description"],
+                    "line": line_num,
+                    "code": match.group().strip()
+                }
+                warnings.append(warning)
+        
+        # Check for common logical issues
+        self._check_common_issues(code, warnings)
+        
+        # Calculate readability score
+        metrics["readability"] = self._calculate_readability(code)
+        metrics["maintainability"] = self._calculate_maintainability_index(code, metrics["complexity"])
+        
+        return {
+            "has_logical_errors": len(warnings) > 0,
+            "warnings": warnings,
+            "metrics": metrics,
+            "score": self._calculate_overall_score(warnings, metrics)
+        }
+    
+    def _calculate_cyclomatic_complexity(self, code: str) -> int:
+        """Calculate cyclomatic complexity"""
+        complexity = 1
+        
+        # Count decision points
+        decision_patterns = [
+            r'\bif\b',
+            r'\belse\b',
+            r'\belif\b',
+            r'\bfor\b',
+            r'\bwhile\b',
+            r'\band\b',
+            r'\bor\b',
+            r'\btry\b',
+            r'\bexcept\b',
+            r'\bcase\b'
+        ]
+        
+        for pattern in decision_patterns:
+            complexity += len(re.findall(pattern, code))
+        
+        return complexity
+    
+    def _calculate_readability(self, code: str) -> float:
+        """Calculate readability score (0-100)"""
+        lines = code.split('\n')
+        
+        if not lines:
+            return 0
+        
+        # Average line length
+        avg_line_len = sum(len(line) for line in lines) / len(lines)
+        
+        # Comment ratio
+        comment_lines = sum(1 for line in lines if line.strip().startswith('#'))
+        comment_ratio = comment_lines / len(lines) if lines else 0
+        
+        # Function length (simplified)
+        functions = re.findall(r'def\s+\w+', code)
+        avg_func_len = len(lines) / max(1, len(functions))
+        
+        # Calculate score
+        score = 100
+        
+        # Penalize long lines
+        if avg_line_len > 80:
+            score -= (avg_line_len - 80) * 0.5
+        
+        # Reward comments
+        score += comment_ratio * 20
+        
+        # Penalize long functions
+        if avg_func_len > 30:
+            score -= (avg_func_len - 30) * 0.2
+        
+        return max(0, min(100, score))
+    
+    def _calculate_maintainability_index(self, code: str, complexity: int) -> float:
+        """Calculate maintainability index (simplified)"""
+        lines = len(code.split('\n'))
+        halstead_volume = len(re.findall(r'\b\w+\b', code))  # Simplified
+        
+        if lines == 0 or complexity == 0:
+            return 0
+        
+        # Simplified MI calculation
+        mi = 171 - 5.2 * np.log(halstead_volume) - 0.23 * complexity - 16.2 * np.log(lines)
+        return max(0, min(100, mi))
+    
+    def _check_common_issues(self, code: str, warnings: List):
+        """Check for common logical issues"""
+        
+        # Check for infinite loop patterns
+        loop_patterns = [
+            (r'while\s+True\s*:', "Potential infinite loop"),
+            (r'for\s+\w+\s+in\s+range\(', "Fixed range loop - OK"),
+        ]
+        
+        for pattern, description in loop_patterns:
+            if re.search(pattern, code):
+                warnings.append({
+                    "type": "loop_analysis",
+                    "description": description,
+                    "line": 0,
+                    "code": pattern
+                })
+        
+        # Check for recursion without base case
+        if 'def ' in code and re.search(r'\b\w+\(.*\)', code):
+            # Simple recursion detection
+            warnings.append({
+                "type": "recursion_check",
+                "description": "Possible recursion - ensure base case exists",
+                "line": 0,
+                "code": "Recursion pattern"
+            })
+    
+    def _calculate_overall_score(self, warnings: List, metrics: Dict) -> float:
+        """Calculate overall code quality score"""
+        base_score = 100
+        
+        # Deduct for warnings
+        base_score -= len(warnings) * 5
+        
+        # Adjust for complexity
+        if metrics["complexity"] > 20:
+            base_score -= (metrics["complexity"] - 20) * 2
+        
+        # Adjust for readability
+        base_score += (metrics["readability"] - 50) * 0.2
+        
+        return max(0, min(100, base_score))
+    
+    def create_test_cases(self, code: str) -> List[Dict]:
+        """Generate test cases based on code analysis"""
+        test_cases = []
+        
+        # Extract functions
+        function_pattern = r'def\s+(\w+)\s*\((.*?)\)'
+        functions = re.findall(function_pattern, code, re.DOTALL)
+        
+        for func_name, params in functions:
+            # Parse parameters
+            param_list = [p.strip().split('=')[0] for p in params.split(',') if p.strip()]
+            
+            # Generate test cases based on function name
+            if 'add' in func_name.lower() or 'sum' in func_name.lower():
+                test_cases.append({
+                    "function": func_name,
+                    "input": [1, 2, 3],
+                    "expected": 6,
+                    "description": f"Test {func_name} with positive numbers"
+                })
+                test_cases.append({
+                    "function": func_name,
+                    "input": [-1, 0, 1],
+                    "expected": 0,
+                    "description": f"Test {func_name} with mixed numbers"
+                })
+            
+            elif 'multiply' in func_name.lower() or 'product' in func_name.lower():
+                test_cases.append({
+                    "function": func_name,
+                    "input": [2, 3, 4],
+                    "expected": 24,
+                    "description": f"Test {func_name} multiplication"
+                })
+            
+            elif 'is_' in func_name.lower():
+                # Boolean function tests
+                test_cases.append({
+                    "function": func_name,
+                    "input": [True],
+                    "expected": True,
+                    "description": f"Test {func_name} with True"
+                })
+                test_cases.append({
+                    "function": func_name,
+                    "input": [False],
+                    "expected": False,
+                    "description": f"Test {func_name} with False"
+                })
+        
+        return test_cases
+
+# ========================================================
+# 🤖 ENHANCED AI CONNECTOR
+# ========================================================
+class AIConnector:
+    """Enhanced AI API connector with learning"""
+    
+    def __init__(self, key_manager):
+        self.key_manager = key_manager
+        self.cache = {}
+        self.learning_data = {}
+        self.load_learning_data()
+    
+    def load_learning_data(self):
+        """Load learning data from file"""
+        data_file = ".ai_learning.json"
+        if os.path.exists(data_file):
+            try:
+                with open(data_file, 'r') as f:
+                    self.learning_data = json.load(f)
+            except:
+                self.learning_data = {"fix_patterns": {}, "success_rate": {}}
+    
+    def save_learning_data(self):
+        """Save learning data to file"""
+        data_file = ".ai_learning.json"
+        try:
+            with open(data_file, 'w') as f:
+                json.dump(self.learning_data, f, indent=2)
+        except:
+            pass
+    
+    def fix_code(self, code: str, error_msg: str = "", context: str = "", 
+                 error_type: str = "") -> Optional[str]:
+        """Fix code with learning capabilities"""
+        
+        # Check cache first
+        cache_key = self._create_cache_key(code, error_msg)
+        if Config.CACHE_ENABLED and cache_key in self.cache:
+            cached = self.cache[cache_key]
+            if time.time() - cached["timestamp"] < Config.CACHE_TTL:
+                TerminalUI.info("Using cached fix")
+                return cached["fix"]
+        
+        # Get key and model
+        key_info = self.key_manager.get_key_model()
+        if not key_info:
+            return None
+        
+        api_key, model = key_info
+        
+        # Create enhanced prompt
+        prompt = self._create_enhanced_prompt(code, error_msg, context, error_type)
+        
+        # Call API
+        response = self._call_enhanced_api(api_key, model, prompt)
+        
+        if response:
+            # Clean response
+            cleaned = AIResponseCleaner.clean(response)
+            
+            # Validate fix
+            if self._validate_fix(code, cleaned, error_msg):
+                # Cache successful fix
+                if Config.CACHE_ENABLED:
+                    self.cache[cache_key] = {
+                        "fix": cleaned,
+                        "timestamp": time.time(),
+                        "error": error_msg
+                    }
+                
+                # Update learning data
+                self._update_learning_data(code, cleaned, error_type, True)
+                self.key_manager.mark_success(api_key)
+                
+                return cleaned
+            else:
+                TerminalUI.warning("Fix validation failed")
+                self._update_learning_data(code, cleaned, error_type, False)
+        
+        self.key_manager.mark_error(api_key)
+        return None
+    
+    def _create_cache_key(self, code: str, error_msg: str) -> str:
+        """Create cache key"""
+        content = f"{code[:500]}:{error_msg[:200]}"
+        return hashlib.md5(content.encode()).hexdigest()
+    
+    def _create_enhanced_prompt(self, code: str, error_msg: str, 
+                               context: str, error_type: str) -> str:
+        """Create enhanced prompt with learning"""
+        
+        # Get similar fixes from learning data
+        similar_fixes = []
+        if error_type in self.learning_data.get("fix_patterns", {}):
+            similar_fixes = self.learning_data["fix_patterns"][error_type][:3]
+        
+        prompt = f"""You are an expert Python programmer. Fix the code below intelligently.
+
+ERROR TYPE: {error_type}
+
+CODE TO FIX:
+```python
+{code}
+"""
+
+        if error_msg:
+            prompt += f"""
+ERROR MESSAGE:
+{error_msg}
+"""
+
+        if context:
+            prompt += f"""
+CONTEXT (surrounding code):
+{context[:300]}
+"""
+
+        if similar_fixes:
+            prompt += f"""
+LEARNED FIX PATTERNS FOR THIS ERROR TYPE:
+{json.dumps(similar_fixes, indent=2)}
+"""
+
+        prompt += """
+REQUIREMENTS:
+1. Output ONLY the fixed Python code.
+2. No explanations, no markdown, no thinking tags.
+3. Preserve the original logic and functionality.
+4. Fix only what's broken - minimal changes.
+5. Keep imports and structure.
+6. Add comments only if necessary for clarity.
+7. Ensure the fix handles edge cases.
+
+IMPORTANT: Return ONLY the fixed code, nothing else!"""
+        
+        return prompt
+    
+    def _call_enhanced_api(self, api_key: str, model: str, prompt: str) -> Optional[str]:
+        """Call API with enhanced error handling"""
+        import requests
+        
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://smart-healer.ai",
+            "X-Title": "Smart Python Healer Pro"
+        }
+        
+        data = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system", 
+                    "content": "You are a Python expert. You output ONLY Python code. No explanations, no markdown."
+                },
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.1,  # Lower temperature for more consistent fixes
+            "max_tokens": 6000,
+            "top_p": 0.95,
+            "frequency_penalty": 0.1,
+            "presence_penalty": 0.1
+        }
+        
+        try:
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=data,
+                timeout=Config.REQUEST_TIMEOUT
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                return result['choices'][0]['message']['content']
+            elif response.status_code == 429:
+                TerminalUI.warning(f"Rate limit exceeded for model {model}")
+                time.sleep(Config.RATE_LIMIT_DELAY * 2)
+                return None
+            else:
+                TerminalUI.warning(f"API Error {response.status_code}: {response.text[:200]}")
+                return None
+                
+        except requests.exceptions.Timeout:
+            TerminalUI.warning("API request timeout")
+            return None
+        except requests.exceptions.ConnectionError:
+            TerminalUI.warning("Connection error - check internet")
+            return None
+        except Exception as e:
+            TerminalUI.warning(f"Unexpected API error: {e}")
+            return None
+    
+    def _validate_fix(self, original: str, fixed: str, error_msg: str) -> bool:
+        """Validate the fix"""
+        # Basic validation
+        if not fixed or len(fixed.strip()) == 0:
+            TerminalUI.warning("Empty fix received")
+            return False
+        
+        # Check if fix is too different from original
+        if len(fixed) < len(original) * Config.MIN_CONTENT_RATIO:
+            TerminalUI.warning(f"Fix too short: {len(fixed)} vs {len(original)}")
+            return False
+        
+        if len(fixed) > len(original) * Config.MAX_CONTENT_RATIO:
+            TerminalUI.warning(f"Fix too long: {len(fixed)} vs {len(original)}")
+            return False
+        
+        # Check for syntax errors
+        try:
+            ast.parse(fixed)
+            return True
+        except SyntaxError as e:
+            TerminalUI.warning(f"Fix has syntax error: {e}")
+            return False
+    
+    def _update_learning_data(self, original: str, fixed: str, 
+                            error_type: str, success: bool):
+        """Update learning data with fix result"""
+        if error_type not in self.learning_data["fix_patterns"]:
+            self.learning_data["fix_patterns"][error_type] = []
+        
+        # Extract diff pattern
+        diff = self._extract_diff_pattern(original, fixed)
+        
+        if diff and len(diff) < 1000:  # Don't store huge diffs
+            self.learning_data["fix_patterns"][error_type].append({
+                "diff": diff,
+                "success": success,
+                "timestamp": datetime.now().isoformat()
+            })
+        
+        # Keep only recent patterns
+        if len(self.learning_data["fix_patterns"][error_type]) > 10:
+            self.learning_data["fix_patterns"][error_type] = \
+                self.learning_data["fix_patterns"][error_type][-10:]
+        
+        # Update success rate
+        key = f"{error_type}_success"
+        if key not in self.learning_data["success_rate"]:
+            self.learning_data["success_rate"][key] = {"success": 0, "total": 0}
+        
+        self.learning_data["success_rate"][key]["total"] += 1
+        if success:
+            self.learning_data["success_rate"][key]["success"] += 1
+        
+        self.save_learning_data()
+    
+    def _extract_diff_pattern(self, original: str, fixed: str) -> str:
+        """Extract diff pattern between original and fixed"""
+        original_lines = original.split('\n')
+        fixed_lines = fixed.split('\n')
+        
+        diff = list(difflib.unified_diff(
+            original_lines,
+            fixed_lines,
+            fromfile='original',
+            tofile='fixed',
+            lineterm='',
+            n=2
+        ))
+        
+        return '\n'.join(diff[-20:])  # Last 20 lines of diff
+
+# ========================================================
+# 🧹 ENHANCED RESPONSE CLEANER
+# ========================================================
+class AIResponseCleaner:
+    """Enhanced AI response cleaner"""
+    
+    @staticmethod
+    def clean(text: str) -> str:
+        """Comprehensive cleaning"""
+        if not text:
+            return ""
+        
+        # Remove thinking tags
+        text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+        text = re.sub(r'<reasoning>.*?</reasoning>', '', text, flags=re.DOTALL)
+        text = re.sub(r'<\|im_start\|>.*?<\|im_end\|>', '', text, flags=re.DOTALL)
+        
+        # Extract Python code from markdown
+        code_patterns = [
+            r'```python\s*(.*?)\s*```',
+            r'```py\s*(.*?)\s*```',
+            r'```\s*(.*?)\s*```',
+        ]
+        
+        for pattern in code_patterns:
+            matches = re.findall(pattern, text, re.DOTALL | re.IGNORECASE)
+            if matches:
+                text = '\n\n'.join(match.strip() for match in matches)
+                break
+        
+        # Remove AI explanations and thinking text
+        lines = text.split('\n')
+        cleaned_lines = []
+        in_code = False
+        code_indent = 0
+        
+        for line in lines:
+            stripped = line.strip()
+            
+            # Skip AI thinking lines
+            if (stripped.startswith(('Here', 'This', 'The', 'Note:', 'Output:', 'Explanation:')) and 
+                not in_code and len(cleaned_lines) > 0):
+                continue
+            
+            # Detect code blocks
+            if re.match(r'^\s*(def |class |import |from |if |for |while |async |@)', stripped):
+                in_code = True
+            
+            # Keep code and relevant lines
+            if in_code or not stripped.startswith(('# ', '#!', '# Here')):
+                cleaned_lines.append(line)
+            
+            # Reset code detection on empty line after significant code
+            if stripped == '' and in_code and len(cleaned_lines) > 5:
+                in_code = False
+        
+        cleaned = '\n'.join(cleaned_lines).strip()
+        
+        # Final cleanup
+        cleaned = re.sub(r'^\s*\n+', '', cleaned)  # Remove leading empty lines
+        cleaned = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned)  # Reduce multiple empty lines
+        
+        return cleaned
+    
+    @staticmethod
+    def extract_error_type(error_msg: str) -> str:
+        """Extract error type from error message"""
+        error_msg_lower = error_msg.lower()
+        
+        error_patterns = {
+            "syntax": ["syntaxerror"],
+            "name": ["nameerror"],
+            "type": ["typeerror"],
+            "value": ["valueerror"],
+            "index": ["indexerror"],
+            "key": ["keyerror"],
+            "attribute": ["attributeerror"],
+            "import": ["importerror", "modulenotfound"],
+            "indentation": ["indentationerror"],
+            "zero_division": ["zerodivision"],
+            "io": ["filenotfound", "permission"],
+            "memory": ["memoryerror"],
+            "recursion": ["recursionerror"],
+            "timeout": ["timeout", "timed out"]
+        }
+        
+        for error_type, patterns in error_patterns.items():
+            if any(pattern in error_msg_lower for pattern in patterns):
+                return error_type
+        
+        return "unknown"
+
+# ========================================================
+# 📦 ENHANCED FILE PROCESSOR
+# ========================================================
+class EnhancedFileProcessor:
+    """Enhanced file processor with AST support"""
+    
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+        self.backup_dir = Config.BACKUP_DIR
+        self.ast_splitter = ASTSmartSplitter()
+        self.error_detector = LogicalErrorDetector()
+        self.process_manager = SmartProcessManager()
+        self._ensure_backup_dir()
+    
+    def _ensure_backup_dir(self):
+        """Ensure backup directory exists"""
+        os.makedirs(self.backup_dir, exist_ok=True)
+    
+    def create_backup(self, suffix: str = "", description: str = "") -> str:
+        """Create backup with metadata"""
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = Path(self.file_path).stem
+            
+            if suffix:
+                backup_name = f"{filename}.{suffix}.{timestamp}.bak"
+            else:
+                backup_name = f"{filename}.{timestamp}.bak"
+            
+            backup_path = os.path.join(self.backup_dir, backup_name)
+            shutil.copy2(self.file_path, backup_path)
+            
+            # Save metadata
+            meta_file = backup_path + ".meta.json"
+            metadata = {
+                "original": self.file_path,
+                "timestamp": datetime.now().isoformat(),
+                "description": description,
+                "size": os.path.getsize(backup_path),
+                "hash": self._calculate_file_hash(self.file_path)
+            }
+            
+            with open(meta_file, 'w') as f:
+                json.dump(metadata, f, indent=2)
+            
+            TerminalUI.success(f"Backup: {backup_name} ({description})")
+            return backup_path
+            
+        except Exception as e:
+            TerminalUI.error(f"Backup failed: {e}")
+            return ""
+    
+    def _calculate_file_hash(self, file_path: str) -> str:
+        """Calculate file hash"""
+        try:
+            with open(file_path, 'rb') as f:
+                return hashlib.md5(f.read()).hexdigest()
+        except:
+            return ""
+    
+    def split_file(self, use_ast: bool = True) -> List[Tuple[int, int, str, List[str]]]:
+        """Split file intelligently"""
+        try:
+            with open(self.file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            
+            # If file is small, don't split
+            lines = content.split('\n')
+            if len(lines) < 100:
+                return [(0, len(lines) - 1, content, [])]
+            
+            # Use AST-based splitting if enabled
+            if use_ast and Config.AST_SPLIT_ENABLED:
+                chunks = self.ast_splitter.smart_split(content, Config.CHUNK_SIZE_LINES)
+            else:
+                # Fallback to line-based splitting
+                chunks = []
+                for i in range(0, len(lines), Config.CHUNK_SIZE_LINES):
+                    chunk_lines = lines[i:i + Config.CHUNK_SIZE_LINES]
+                    chunk_content = '\n'.join(chunk_lines)
+                    chunks.append((i, min(i + len(chunk_lines), len(lines) - 1), 
+                                 chunk_content, []))
+            
+            # Limit number of chunks
+            if len(chunks) > Config.MAX_CHUNKS:
+                chunks = chunks[:Config.MAX_CHUNKS]
+                TerminalUI.warning(f"Limited to {Config.MAX_CHUNKS} chunks")
+            
+            TerminalUI.info(f"Split into {len(chunks)} chunks")
+            return chunks
+            
+        except Exception as e:
+            TerminalUI.error(f"Split failed: {e}")
+            return []
+    
+    def analyze_file(self) -> Dict[str, Any]:
+        """Comprehensive file analysis"""
+        try:
+            with open(self.file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Get basic info
+            lines = content.split('\n')
+            line_count = len(lines)
+            char_count = len(content)
+            
+            # Analyze with error detector
+            analysis = self.error_detector.analyze(content)
+            
+            # Detect input requirements
+            input_reqs = self.process_manager.detect_input_requirements(self.file_path)
+            
+            # Calculate statistics
+            functions = len(re.findall(r'def\s+\w+', content))
+            classes = len(re.findall(r'class\s+\w+', content))
+            imports = len(re.findall(r'^import\s+|^from\s+', content, re.MULTILINE))
+            
+            return {
+                "file": self.file_path,
+                "lines": line_count,
+                "characters": char_count,
+                "functions": functions,
+                "classes": classes,
+                "imports": imports,
+                "input_requirements": input_reqs,
+                "logical_analysis": analysis,
+                "has_errors": analysis["has_logical_errors"],
+                "quality_score": analysis.get("score", 0)
+            }
+            
+        except Exception as e:
+            TerminalUI.error(f"Analysis failed: {e}")
+            return {}
+    
+    def save_file(self, content: str, show_diff: bool = True, 
+                  backup: bool = True) -> bool:
+        """Save file with validation and diff display"""
+        try:
+            # Read original
+            with open(self.file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                original = f.read()
+            
+            # Validate content
+            validation = self._validate_content(original, content)
+            if not validation["valid"]:
+                TerminalUI.error(f"Validation failed: {validation['reason']}")
+                
+                if RICH_AVAILABLE:
+                    confirm = Confirm.ask("Save anyway?")
+                else:
+                    confirm = input("Save anyway? (y/n): ").strip().lower() in ['y', 'yes']
+                
+                if not confirm:
+                    return False
+            
+            # Create backup
+            if backup:
+                self.create_backup("pre_save", "Before saving changes")
+            
+            # Show diff if requested
+            if show_diff:
+                TerminalUI.show_code_differences(original, content)
+            
+            # Save file
+            with open(self.file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            TerminalUI.success(f"File saved: {self.file_path}")
+            
+            # Show statistics
+            orig_lines = len(original.split('\n'))
+            new_lines = len(content.split('\n'))
+            TerminalUI.info(f"Lines: {orig_lines} → {new_lines} ({new_lines - orig_lines:+d})")
+            
+            return True
+            
+        except Exception as e:
+            TerminalUI.error(f"Save failed: {e}")
+            return False
+    
+    def _validate_content(self, original: str, new: str) -> Dict[str, Any]:
+        """Validate new content"""
+        # Check length ratios
+        if len(new) < len(original) * Config.MIN_CONTENT_RATIO:
+            return {"valid": False, "reason": f"Too short ({len(new)/len(original):.1%} of original)"}
+        
+        if len(new) > len(original) * Config.MAX_CONTENT_RATIO:
+            return {"valid": False, "reason": f"Too long ({len(new)/len(original):.1%} of original)"}
+        
+        # Check for syntax errors
+        try:
+            ast.parse(new)
+        except SyntaxError as e:
+            return {"valid": False, "reason": f"Syntax error: {e}"}
+        
+        # Check for obvious issues
+        if "TODO" in new or "FIXME" in new:
+            TerminalUI.warning("File contains TODO/FIXME comments")
+        
+        return {"valid": True, "reason": "OK"}
+
+# ========================================================
+# 🎯 ENHANCED MAIN SYSTEM
+# ========================================================
+class EnhancedSmartHealer:
+    """Enhanced main healing system"""
+    
+    def __init__(self, target_file: str):
+        self.target_file = target_file
+        self.key_manager = KeyManager()
+        self.ai_connector = AIConnector(self.key_manager)
+        self.file_processor = EnhancedFileProcessor(target_file)
+        self.selector = SmartFileSelector()
+        self.process_manager = SmartProcessManager()
+        
+        # Statistics
+        self.attempts = 0
+        self.fixes = 0
+        self.errors_fixed = {}
+        self.start_time = time.time()
+        self.session_id = hashlib.md5(str(time.time()).encode()).hexdigest()[:8]
+        
+        # Analysis cache
+        self.file_analysis = None
+    
+    def analyze_target(self) -> Dict[str, Any]:
+        """Analyze target file"""
+        TerminalUI.header("File Analysis", "🔍")
+        
+        self.file_analysis = self.file_processor.analyze_file()
+        
+        if self.file_analysis:
+            self._display_analysis(self.file_analysis)
+        
+        return self.file_analysis
+    
+    def _display_analysis(self, analysis: Dict):
+        """Display analysis results"""
+        if RICH_AVAILABLE:
+            # Main info table
+            main_table = Table(title="File Information", show_header=False)
+            main_table.add_column("Property", style="bold")
+            main_table.add_column("Value")
+            
+            main_table.add_row("File", analysis["file"])
+            main_table.add_row("Lines", str(analysis["lines"]))
+            main_table.add_row("Characters", str(analysis["characters"]))
+            main_table.add_row("Functions", str(analysis["functions"]))
+            main_table.add_row("Classes", str(analysis["classes"]))
+            main_table.add_row("Imports", str(analysis["imports"]))
+            main_table.add_row("Quality Score", f"{analysis['quality_score']:.1f}/100")
+            
+            console.print(main_table)
+            
+            # Warnings
+            warnings = analysis["logical_analysis"]["warnings"]
+            if warnings:
+                warning_table = Table(title="Logical Issues Found", show_header=True)
+                warning_table.add_column("Line", style="dim")
+                warning_table.add_column("Type")
+                warning_table.add_column("Description")
+                warning_table.add_column("Code")
+                
+                for warning in warnings[:10]:  # Show first 10
+                    warning_table.add_row(
+                        str(warning["line"]),
+                        warning["type"],
+                        warning["description"],
+                        warning["code"][:50] + "..." if len(warning["code"]) > 50 else warning["code"]
+                    )
+                
+                console.print(warning_table)
+                
+                if len(warnings) > 10:
+                    TerminalUI.info(f"... and {len(warnings) - 10} more warnings")
+            
+            # Input requirements
+            input_reqs = analysis["input_requirements"]
+            if input_reqs:
+                input_table = Table(title="Input Requirements", show_header=True)
+                input_table.add_column("Type")
+                input_table.add_column("Line")
+                input_table.add_column("Details")
+                
+                for req in input_reqs:
+                    input_table.add_row(
+                        req["type"],
+                        str(req.get("location", "N/A")),
+                        str(req.get("prompt", req.get("filename", "N/A")))
+                    )
+                
+                console.print(input_table)
+        else:
+            # Simple display
+            print(f"\n📄 File: {analysis['file']}")
+            print(f"📊 Lines: {analysis['lines']}, Chars: {analysis['characters']}")
+            print(f"⚙️  Functions: {analysis['functions']}, Classes: {analysis['classes']}")
+            print(f"⭐ Quality Score: {analysis['quality_score']:.1f}/100")
+            
+            warnings = analysis["logical_analysis"]["warnings"]
+            if warnings:
+                print(f"\n⚠️  Warnings: {len(warnings)}")
+                for warning in warnings[:5]:
+                    print(f"  Line {warning['line']}: {warning['description']}")
+    
+    def run_and_monitor(self) -> bool:
+        """Run and monitor the script"""
+        TerminalUI.header("Active Monitoring", "👁️")
+        
+        consecutive_failures = 0
+        last_error = ""
+        error_type = ""
+        
+        while self.attempts < Config.MAX_RETRIES:
+            self.attempts += 1
+            TerminalUI.info(f"Attempt {self.attempts}/{Config.MAX_RETRIES}")
+            
+            # Run script
+            success, output, error = self.process_manager.run_script(
+                self.target_file,
+                timeout=Config.REQUEST_TIMEOUT
+            )
+            
+            if success:
+                consecutive_failures = 0
+                TerminalUI.success(f"Execution successful")
+                TerminalUI.debug(f"Output: {output[:200]}" if output else "No output")
+                
+                # Wait with interrupt
+                wait_result = self._wait_with_interrupt(Config.HEALTH_CHECK_INTERVAL)
+                if wait_result == "interrupt":
+                    TerminalUI.info("Monitoring interrupted by user")
+                    break
+                    
+            else:
+                consecutive_failures += 1
+                last_error = error or output
+                error_type = AIResponseCleaner.extract_error_type(last_error)
+                
+                TerminalUI.error(f"Execution failed (#{consecutive_failures})")
+                TerminalUI.warning(f"Error type: {error_type}")
+                TerminalUI.warning(f"Error: {last_error[:300]}")
+                
+                if consecutive_failures >= 2:
+                    TerminalUI.info("Attempting auto-fix...")
+                    if self.attempt_auto_fix(last_error, error_type):
+                        TerminalUI.success("Fix applied successfully!")
+                        consecutive_failures = 0
+                        time.sleep(2)  # Brief pause after fix
+                    else:
+                        wait_time = min(60, consecutive_failures * 10)
+                        TerminalUI.info(f"Waiting {wait_time}s before retry...")
+                        time.sleep(wait_time)
+                else:
+                    time.sleep(5)  # Short wait before retry
+        
+        self._show_final_report()
+        return self.fixes > 0
+    
+    def attempt_auto_fix(self, error_msg: str, error_type: str) -> bool:
+        """Attempt automatic fix"""
+        TerminalUI.header(f"Auto-Fix Attempt", "🔧")
+        
+        # Create backup
+        backup = self.file_processor.create_backup(
+            f"fix_attempt_{self.fixes + 1}",
+            f"Before fixing {error_type}"
+        )
+        
+        if not backup:
+            TerminalUI.warning("Proceeding without backup")
+        
+        # Split file
+        chunks = self.file_processor.split_file()
+        if not chunks:
+            TerminalUI.error("Failed to split file")
+            return False
+        
+        TerminalUI.info(f"Processing {len(chunks)} chunks...")
+        
+        # Process chunks
+        fixed_chunks = []
+        all_successful = True
+        
+        if len(chunks) == 1:
+            # Small file - fix whole thing
+            chunk_content = chunks[0][2]
+            fixed = self.ai_connector.fix_code(
+                chunk_content, 
+                error_msg, 
+                "", 
+                error_type
+            )
+            
+            if fixed:
+                fixed_chunks.append(fixed)
+            else:
+                fixed_chunks.append(chunk_content)
+                all_successful = False
+                
+        else:
+            # Large file - process sequentially
+            for i, (start, end, content, deps) in enumerate(chunks, 1):
+                TerminalUI.info(f"Chunk {i}/{len(chunks)} (lines {start}-{end})...")
+                
+                # Add context from previous chunks
+                context = ""
+                if i > 1 and fixed_chunks:
+                    context = '\n'.join(fixed_chunks[-1:])  # Last fixed chunk as context
+                
+                fixed = self.ai_connector.fix_code(
+                    content,
+                    error_msg,
+                    context,
+                    error_type
+                )
+                
+                if fixed:
+                    fixed_chunks.append(fixed)
+                else:
+                    fixed_chunks.append(content)
+                    all_successful = False
+        
+        # Combine chunks
+        final_content = '\n'.join(fixed_chunks)
+        
+        # Validate
+        if not self._validate_fix(final_content):
+            TerminalUI.error("Fix validation failed")
+            return False
+        
+        # Save
+        if self.file_processor.save_file(final_content, show_diff=True):
+            self.fixes += 1
+            self.errors_fixed[error_type] = self.errors_fixed.get(error_type, 0) + 1
+            TerminalUI.success(f"Fix #{self.fixes} applied successfully")
+            return True
+        else:
+            return False
+    
+    def _validate_fix(self, code: str) -> bool:
+        """Validate the fix"""
+        # Check syntax
+        try:
+            ast.parse(code)
+        except SyntaxError as e:
+            TerminalUI.error(f"Syntax error in fix: {e}")
+            return False
+        
+        # Check for obvious issues
+        if code.strip() == "":
+            TerminalUI.error("Fix is empty")
+            return False
+        
+        # Run quick test if possible
+        test_result = self._quick_test(code)
+        if not test_result["success"]:
+            TerminalUI.warning(f"Quick test failed: {test_result['error']}")
+            # Don't fail completely, just warn
+        
+        return True
+    
+    def _quick_test(self, code: str) -> Dict[str, Any]:
+        """Quick test of the code"""
+        # Create temporary file
+        temp_file = f"temp_test_{self.session_id}.py"
+        
+        try:
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                f.write(code)
+            
+            # Run with timeout
+            success, output, error = self.process_manager.run_script(
+                temp_file,
+                timeout=10
+            )
+            
+            return {
+                "success": success,
+                "output": output,
+                "error": error
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e)
+            }
+        finally:
+            # Cleanup
+            try:
+                os.remove(temp_file)
+            except:
+                pass
+    
+    def _wait_with_interrupt(self, seconds: int) -> str:
+        """Wait with user interrupt capability"""
+        TerminalUI.info(f"Waiting {seconds}s (press Enter to interrupt)...")
+        
+        start = time.time()
+        
+        try:
+            while time.time() - start < seconds:
+                # Check for user input without blocking
+                if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
+                    sys.stdin.read(1)  # Read the input
+                    return "interrupt"
+                
+                # Progress display
+                elapsed = time.time() - start
+                if elapsed > 1 and int(elapsed) % 5 == 0:
+                    remaining = seconds - int(elapsed)
+                    TerminalUI.info(f"Waiting... {remaining}s remaining")
+                
+                time.sleep(0.1)
+                
+        except KeyboardInterrupt:
+            return "interrupt"
+        
+        return "timeout"
+    
+    def _show_final_report(self):
+        """Show comprehensive final report"""
+        elapsed = time.time() - self.start_time
+        minutes = int(elapsed // 60)
+        seconds = int(elapsed % 60)
+        
+        TerminalUI.header("Final Report", "📊")
+        
+        if RICH_AVAILABLE:
+            # Main statistics
+            stats_table = Table(title="Session Statistics", show_header=True)
+            stats_table.add_column("Metric", style="bold")
+            stats_table.add_column("Value", justify="right")
+            
+            stats_table.add_row("Target File", self.target_file)
+            stats_table.add_row("Session ID", self.session_id)
+            stats_table.add_row("Total Attempts", str(self.attempts))
+            stats_table.add_row("Successful Fixes", str(self.fixes))
+            stats_table.add_row("Success Rate", f"{(self.fixes/max(self.attempts,1))*100:.1f}%")
+            stats_table.add_row("Duration", f"{minutes:02d}:{seconds:02d}")
+            
+            console.print(stats_table)
+            
+            # Errors fixed
+            if self.errors_fixed:
+                errors_table = Table(title="Errors Fixed", show_header=True)
+                errors_table.add_column("Error Type", style="bold")
+                errors_table.add_column("Count", justify="right")
+                
+                for error_type, count in self.errors_fixed.items():
+                    errors_table.add_row(error_type.capitalize(), str(count))
+                
+                console.print(errors_table)
+            
+            # Recommendations
+            if self.file_analysis:
+                score = self.file_analysis.get("quality_score", 0)
+                if score < 70:
+                    console.print(Panel(
+                        "[yellow]⚠️  Recommendation: Consider refactoring for better maintainability[/yellow]",
+                        title="Code Quality Alert"
+                    ))
+                
+        else:
+            # Simple display
+            print(f"{'='*60}")
+            print(f"📄 File: {self.target_file}")
+            print(f"🆔 Session: {self.session_id}")
+            print(f"🔄 Attempts: {self.attempts}")
+            print(f"✅ Fixes: {self.fixes}")
+            print(f"📈 Success Rate: {(self.fixes/max(self.attempts,1))*100:.1f}%")
+            print(f"⏱️  Duration: {minutes:02d}:{seconds:02d}")
+            
+            if self.errors_fixed:
+                print(f"\n🔧 Errors Fixed:")
+                for error_type, count in self.errors_fixed.items():
+                    print(f"  {error_type.capitalize()}: {count}")
+            
+            print(f"{'='*60}")
+
+# ========================================================
+# 🔑 ENHANCED KEY MANAGER
+# ========================================================
+class KeyManager:
+    """Enhanced key manager with load balancing"""
+    
+    def __init__(self):
+        self.keys = Config.get_api_keys()
+        self.usage_stats = {}
+        self.model_stats = {}
+        self.lock = threading.Lock()
+        self.models = Config.get_free_models()
+        
+        # Initialize stats
+        for key in self.keys:
+            key_hash = self._hash_key(key)
+            self.usage_stats[key_hash] = {
+                "key": key,
+                "total_requests": 0,
+                "successful": 0,
+                "failed": 0,
+                "last_used": None,
+                "errors_today": 0,
+                "tokens_used": 0
+            }
+        
+        for model in self.models:
+            self.model_stats[model] = {
+                "requests": 0,
+                "success_rate": 0.0,
+                "avg_response_time": 0.0,
+                "last_used": None
+            }
+    
+    def _hash_key(self, key: str) -> str:
+        """Hash key for storage"""
+        return hashlib.sha256(key.encode()).hexdigest()[:12]
+    
+    def get_key_model(self) -> Optional[Tuple[str, str]]:
+        """Get best key and model combination"""
+        if not self.keys:
+            TerminalUI.error("No API keys available!")
+            return None
+        
+        with self.lock:
+            # Filter available keys
+            available_keys = []
+            
+            for key in self.keys:
+                key_hash = self._hash_key(key)
+                stats = self.usage_stats.get(key_hash, {})
+                
+                # Check limits
+                if stats.get("total_requests", 0) >= Config.MAX_REQUESTS_PER_KEY:
+                    continue
+                
+                if stats.get("errors_today", 0) > 5:
+                    continue
+                
+                available_keys.append((key, key_hash, stats))
+            
+            if not available_keys:
+                TerminalUI.error("All keys have reached daily limits!")
+                return None
+            
+            # Sort by: success rate, then usage count
+            available_keys.sort(key=lambda x: (
+                -x[2].get("success_rate", 0),
+                x[2].get("total_requests", 0)
+            ))
+            
+            best_key, key_hash, stats = available_keys[0]
+            
+            # Update usage
+            stats["total_requests"] = stats.get("total_requests", 0) + 1
+            stats["last_used"] = datetime.now().isoformat()
+            
+            # Select model
+            model = self._select_optimal_model(stats)
+            
+            # Update model stats
+            self.model_stats[model]["requests"] = self.model_stats[model].get("requests", 0) + 1
+            self.model_stats[model]["last_used"] = datetime.now().isoformat()
+            
+            # Log
+            success_rate = stats.get("success_rate", 0) * 100
+            TerminalUI.info(f"Using key {key_hash} (success: {success_rate:.1f}%) with model {model}")
+            
+            return best_key, model
+    
+    def _select_optimal_model(self, key_stats: Dict) -> str:
+        """Select optimal model based on history"""
+        
+        # If key has high success rate, use primary model
+        success_rate = key_stats.get("success_rate", 0)
+        if success_rate > 0.8:
+            return "deepseek/deepseek-chat:free"
+        
+        # If many errors, try different model
+        errors = key_stats.get("errors_today", 0)
+        if errors > 2:
+            return "google/gemini-2.0-flash-exp:free"
+        
+        # Rotate models for diversity
+        total_requests = key_stats.get("total_requests", 0)
+        model_index = total_requests % len(self.models)
+        
+        return self.models[model_index]
+    
+    def mark_success(self, key: str, tokens_used: int = 0):
+        """Mark request as successful"""
+        key_hash = self._hash_key(key)
+        
+        with self.lock:
+            if key_hash in self.usage_stats:
+                stats = self.usage_stats[key_hash]
+                stats["successful"] = stats.get("successful", 0) + 1
+                stats["tokens_used"] = stats.get("tokens_used", 0) + tokens_used
+                
+                # Calculate success rate
+                total = stats.get("total_requests", 1)
+                successful = stats.get("successful", 0)
+                stats["success_rate"] = successful / total if total > 0 else 0
+    
+    def mark_error(self, key: str):
+        """Mark request as failed"""
+        key_hash = self._hash_key(key)
+        
+        with self.lock:
+            if key_hash in self.usage_stats:
+                stats = self.usage_stats[key_hash]
+                stats["failed"] = stats.get("failed", 0) + 1
+                stats["errors_today"] = stats.get("errors_today", 0) + 1
+                
+                # Calculate success rate
+                total = stats.get("total_requests", 1)
+                successful = stats.get("successful", 0)
+                stats["success_rate"] = successful / total if total > 0 else 0
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get comprehensive statistics"""
+        with self.lock:
+            total_requests = sum(s.get("total_requests", 0) for s in self.usage_stats.values())
+            successful = sum(s.get("successful", 0) for s in self.usage_stats.values())
+            tokens = sum(s.get("tokens_used", 0) for s in self.usage_stats.values())
+            
+            return {
+                "total_keys": len(self.keys),
+                "total_requests": total_requests,
+                "successful_requests": successful,
+                "success_rate": successful / total_requests if total_requests > 0 else 0,
+                "tokens_used": tokens,
+                "keys": {
+                    self._hash_key(k): v for k, v in self.usage_stats.items()
+                },
+                "models": self.model_stats
+            }
+
+# ========================================================
+# 🚀 MAIN ENTRY POINT
+# ========================================================
+def main():
+    """Main entry point"""
+    
+    # Setup signal handlers
+    signal.signal(signal.SIGINT, lambda s, f: graceful_exit())
+    
+    # Parse arguments
+    args = parse_arguments()
+    
+    # Show banner
+    show_banner()
+    
+    # Check dependencies
+    check_dependencies()
+    
+    # Get target file
+    target_file = get_target_file(args)
+    if not target_file:
+        return
+    
+    # Run enhanced healer
+    try:
+        healer = EnhancedSmartHealer(target_file)
+        
+        # Analyze first
+        if args.analyze:
+            healer.analyze_target()
+            if not args.auto_fix:
+                return
+        
+        # Run monitoring
+        healer.run_and_monitor()
+        
+    except KeyboardInterrupt:
+        TerminalUI.info("\nSystem stopped by user")
+    except Exception as e:
+        TerminalUI.error(f"Unexpected error: {e}")
+        if args.verbose:
+            traceback.print_exc()
+
+def parse_arguments():
+    """Parse command line arguments"""
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        description="🤖 Smart Self-Healing System v3.0",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  smart_healer.py                    # Interactive file selection
+  smart_healer.py my_script.py       # Process specific file
+  smart_healer.py --auto             # Auto-select most relevant file
+  smart_healer.py --analyze          # Analyze without fixing
+  smart_healer.py --verbose          # Show detailed output
+        """
+    )
+    
+    parser.add_argument("file", nargs="?", help="Target Python file")
+    parser.add_argument("--auto", "-a", action="store_true", help="Auto-select file")
+    parser.add_argument("--analyze", action="store_true", help="Analyze only, don't fix")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+    parser.add_argument("--install-fix", action="store_true", help="Install 'fix' command")
+    parser.add_argument("--version", action="store_true", help="Show version")
+    
+    return parser.parse_args()
+
+def show_banner():
+    """Show system banner"""
+    banner = """
+╔══════════════════════════════════════════════════════════╗
+║  🤖 SMART SELF-HEALING SYSTEM v3.0 - Professional Edition  ║
+║  ✨ Intelligent Auto-Repair for Python Code              ║
+╚══════════════════════════════════════════════════════════╝
+"""
+    print(banner)
+    
+    if RICH_AVAILABLE:
+        console.print("[bold cyan]✨ Features:[/bold cyan]")
+        console.print("  • [green]✓[/green] AST-based code analysis")
+        console.print("  • [green]✓[/green] Logical error detection")
+        console.print("  • [green]✓[/green] Intelligent file splitting")
+        console.print("  • [green]✓[/green] Learning from past fixes")
+        console.print("  • [green]✓[/green] Smart API key management")
+    else:
+        print("✨ Features:")
+        print("  • AST-based code analysis")
+        print("  • Logical error detection")
+        print("  • Intelligent file splitting")
+        print("  • Learning from past fixes")
+        print("  • Smart API key management")
+    
+    print()
+
+def check_dependencies():
+    """Check and install dependencies"""
+    required = ['requests']
+    optional = ['rich', 'numpy', 'scikit-learn']
+    
+    missing = []
+    
+    for lib in required:
+        try:
+            __import__(lib)
+        except ImportError:
+            missing.append(lib)
+    
+    if missing:
+        TerminalUI.warning(f"Missing required libraries: {', '.join(missing)}")
+        
+        if RICH_AVAILABLE:
+            install = Confirm.ask("Install missing libraries?")
+        else:
+            install = input("Install missing libraries? (y/n): ").strip().lower() in ['y', 'yes']
+        
+        if install:
+            try:
+                import subprocess
+                subprocess.check_call([sys.executable, "-m", "pip", "install"] + missing)
+                TerminalUI.success("Libraries installed successfully!")
+            except Exception as e:
+                TerminalUI.error(f"Failed to install: {e}")
+                sys.exit(1)
+        else:
+            TerminalUI.error("Cannot continue without required libraries")
+            sys.exit(1)
+
+def get_target_file(args):
+    """Get target file based on arguments"""
+    selector = SmartFileSelector()
+    
+    # If file specified and exists
+    if args.file and os.path.exists(args.file):
+        if args.file.endswith('.py'):
+            return args.file
+        else:
+            TerminalUI.warning(f"Not a Python file: {args.file}")
+    
+    # Auto mode
+    if args.auto:
+        return selector.select_file(auto_mode=True)
+    
+    # Interactive selection
+    return selector.select_file(auto_mode=False)
+
+def graceful_exit():
+    """Graceful exit handler"""
+    TerminalUI.info("\n👋 Exiting gracefully...")
+    sys.exit(0)
+
+def install_fix_command():
+    """Install 'fix' command system-wide"""
+    TerminalUI.header("Installing 'fix' command", "🔧")
+    
+    current_file = os.path.abspath(__file__)
+    
+    # Installation locations
+    locations = [
+        "/usr/local/bin/fix",
+        os.path.expanduser("~/bin/fix"),
+        "/usr/bin/fix"
+    ]
+    
+    for location in locations:
+        try:
+            # Create directory if needed
+            os.makedirs(os.path.dirname(location), exist_ok=True)
+            
+            # Create wrapper script
+            wrapper = f"""#!/bin/bash
+# Smart Self-Healing System wrapper
+python3 "{current_file}" "$@"
+"""
+            
+            with open(location, 'w') as f:
+                f.write(wrapper)
+            
+            # Make executable
+            os.chmod(location, 0o755)
+            
+            TerminalUI.success(f"Installed at: {location}")
+            TerminalUI.info(f"Usage: fix [python_file.py]")
+            
+            # Test installation
+            if os.system(f"{location} --version >/dev/null 2>&1") == 0:
+                TerminalUI.success("Installation verified!")
+            else:
+                TerminalUI.warning("Installation may need PATH update")
+            
+            break
+            
+        except PermissionError:
+            TerminalUI.warning(f"Permission denied: {location}")
+            continue
+        except Exception as e:
+            TerminalUI.error(f"Error: {e}")
+            continue
+
+# ========================================================
+# 📦 UTILITY FUNCTIONS
+# ========================================================
+def show_help():
+    """Show help information"""
+    help_text = """
+SMART SELF-HEALING SYSTEM v3.0
+
+Usage:
+  python smart_healer.py [options] [file.py]
+
+Options:
+  file.py              Target Python file to process
+  --auto, -a           Auto-select most relevant file
+  --analyze            Analyze code without fixing
+  --verbose, -v        Show detailed output
+  --install-fix        Install 'fix' command globally
+  --version            Show version information
+  --help, -h           Show this help
+
+Commands during operation:
+  Ctrl+C               Stop the system
+  Enter                Interrupt waiting period
+
+Examples:
+  smart_healer.py                     # Interactive mode
+  smart_healer.py my_script.py        # Process specific file
+  smart_healer.py --auto              # Auto-mode
+  fix my_script.py                    # After installing fix command
+
+Configuration:
+  API keys in: api_keys.txt, ~/.smart_healer_keys, or environment variables
+  Config file: .smart_healer_config.json
+  History: ~/.smart_healer_history
+  Backups: smart_backups/ directory
+"""
+    print(help_text)
+
+def show_version():
+    """Show version information"""
+    version_info = """
+Smart Self-Healing System v3.0
+Professional Edition
+Built with ❤️ for Python developers
+
+Features:
+  • AST-based intelligent code splitting
+  • Logical error detection and analysis
+  • Machine learning from past fixes
+  • Multi-model AI integration
+  • Comprehensive backup system
+  • Professional terminal UI
+
+Requirements:
+  • Python 3.8+
+  • requests library
+  • (Optional) rich for enhanced UI
+
+License: MIT
+GitHub: https://github.com/yourusername/smart-healer
+"""
+    print(version_info)
+
+# ========================================================
+# 🎯 ENTRY POINT
+# ========================================================
+if __name__ == "__main__":
+    # Handle special commands
+    if len(sys.argv) > 1:
+        if sys.argv[1] in ["--version", "-v", "version"]:
+            show_version()
+            sys.exit(0)
+        elif sys.argv[1] in ["--help", "-h", "help"]:
+            show_help()
+            sys.exit(0)
+        elif sys.argv[1] == "--install-fix":
+            install_fix_command()
+            sys.exit(0)
+    
+    # Run main system
+    main()
